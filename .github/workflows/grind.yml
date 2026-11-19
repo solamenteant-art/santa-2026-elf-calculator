@@ -1,0 +1,93 @@
+name: grind-shard
+
+# A shard job starts when a job spec file is pushed under jobs/.
+# Spec format (JSON): {"start":0,"end":100,"k":10,"seed_base":300000,"min_len":400}
+# The runner solves its slice against state/incumbent.jsonl and commits the
+# results to the "shards" branch under results/. Merge happens centrally:
+# shortest valid program per puzzle wins.
+
+on:
+  push:
+    paths:
+      - "jobs/**"
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "first puzzle index"
+        required: true
+        default: "0"
+      end:
+        description: "last puzzle index (exclusive)"
+        required: true
+        default: "100"
+      k:
+        description: "random orders per puzzle"
+        required: true
+        default: "10"
+      seed_base:
+        description: "seed base (must be unique per shard)"
+        required: true
+        default: "300000"
+      min_len:
+        description: "only puzzles with incumbent length >= this"
+        required: true
+        default: "400"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: grind-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  grind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - name: Check out solver
+        uses: actions/checkout@v4
+
+      - name: Resolve job spec
+        id: spec
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "start=${{ inputs.start }}" >> "$GITHUB_OUTPUT"
+            echo "end=${{ inputs.end }}" >> "$GITHUB_OUTPUT"
+            echo "k=${{ inputs.k }}" >> "$GITHUB_OUTPUT"
+            echo "seed_base=${{ inputs.seed_base }}" >> "$GITHUB_OUTPUT"
+            echo "min_len=${{ inputs.min_len }}" >> "$GITHUB_OUTPUT"
+          else
+            SPEC=$(ls jobs/*.json | head -1)
+            echo "spec file: $SPEC"
+            echo "start=$(jq -r .start $SPEC)" >> "$GITHUB_OUTPUT"
+            echo "end=$(jq -r .end $SPEC)" >> "$GITHUB_OUTPUT"
+            echo "k=$(jq -r .k $SPEC)" >> "$GITHUB_OUTPUT"
+            echo "seed_base=$(jq -r .seed_base $SPEC)" >> "$GITHUB_OUTPUT"
+            echo "min_len=$(jq -r .min_len $SPEC)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Assemble incumbent from parts
+        run: cat state/incumbent-*.jsonl > state/incumbent.jsonl
+
+      - name: Run shard
+        working-directory: solver
+        run: |
+          python3 portfolio_rand.py \
+            ${{ steps.spec.outputs.start }} \
+            ${{ steps.spec.outputs.end }} \
+            ${{ steps.spec.outputs.k }} \
+            ../state/incumbent.jsonl \
+            ../results/actions-${{ steps.spec.outputs.seed_base }}.jsonl \
+            ${{ steps.spec.outputs.seed_base }} \
+            ${{ steps.spec.outputs.min_len }}
+
+      - name: Commit results to shards branch
+        run: |
+          git config user.name "elf-grind"
+          git config user.email "elf-grind@localhost"
+          git fetch origin shards || true
+          git checkout -B shards
+          git add results/
+          git commit -m "shard results: actions seed ${{ steps.spec.outputs.seed_base }} range ${{ steps.spec.outputs.start }}-${{ steps.spec.outputs.end }}" || echo "nothing to commit"
+          git push origin shards --force-with-lease || git push origin shards
