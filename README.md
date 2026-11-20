@@ -42,10 +42,8 @@ per puzzle."
 - `data/puzzles.csv` — the competition puzzles
 - `state/incumbent-*.jsonl` — the best program found so far per puzzle
   (split into parts; concatenate into `state/incumbent.jsonl` to use)
-- `jobs/` — shard job specs; pushing one starts a GitHub Actions grind
+- `jobs/` — shard job specs; pushing one starts a grind shard
 - `results/` — shard outputs land here on the `shards` branch
-- `aws/` — EC2 burst bootstrap (`user_data.sh`, `run_shard.sh`) and the
-  launch checklist
 
 ## Verification
 
