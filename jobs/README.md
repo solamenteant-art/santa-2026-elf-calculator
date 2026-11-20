@@ -1,6 +1,6 @@
 # Shard jobs
 
-Push a JSON file here to start a GitHub Actions grind shard. Format:
+Push a JSON file here to start a grind shard. Format:
 
 ```json
 {"start": 0, "end": 100, "k": 10, "seed_base": 300000, "min_len": 400}
